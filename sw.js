@@ -1,5 +1,5 @@
 // DUVI PROJECT OS · Service Worker v2.0
-const CACHE = 'duvi-project-v2';
+const CACHE='duvi-v10';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
