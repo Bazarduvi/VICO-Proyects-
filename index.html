@@ -26,9 +26,11 @@ body{font-family:var(--fb);background:var(--bg);color:var(--tx);height:100%;over
 *{scrollbar-width:thin;scrollbar-color:var(--bo2) transparent;}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;position:relative;}
 #topbar{height:var(--topbar-h);flex-shrink:0;background:rgba(10,10,16,.97);border-bottom:1px solid var(--bo2);display:flex;align-items:center;padding:0 10px;gap:8px;position:relative;z-index:300;backdrop-filter:blur(20px);}
-#content{flex:1;overflow:hidden;position:relative;}
-.view{display:none;position:absolute;inset:0;overflow-y:auto;padding:14px;}
-.view.active{display:block;}#view-sheet.active{display:flex;}
+#content{flex:1;overflow:hidden;position:relative;contain:strict;}
+.view{display:none;position:absolute;inset:0;overflow:hidden;padding:14px;pointer-events:none;}
+.view.active{display:block;overflow-y:auto;pointer-events:auto;}
+#view-sheet{padding:0;}
+#view-sheet.active{display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;}
 #navbar{height:var(--navbar-h);flex-shrink:0;background:rgba(10,10,16,.97);border-top:1px solid var(--bo2);display:flex;align-items:center;justify-content:space-around;padding:0 4px env(safe-area-inset-bottom,0) 4px;position:relative;z-index:300;backdrop-filter:blur(20px);}
 .nb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;height:100%;background:none;border:none;color:var(--tx3);cursor:pointer;font-family:var(--fm);font-size:.38rem;letter-spacing:.5px;text-transform:uppercase;transition:color var(--tr);padding:0 2px;}
 .nb svg{width:18px;height:18px;transition:var(--tr);}
@@ -408,7 +410,7 @@ select.inp{cursor:pointer;}
 </div>
 
 <!-- SHEET -->
-<div id="view-sheet" class="view" style="padding:0;display:flex;flex-direction:column;overflow:hidden">
+<div id="view-sheet" class="view">
   <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--bo);overflow-x:auto;flex-shrink:0;background:var(--bg2)">
     <div id="sheet-tabs" style="display:flex;gap:4px;flex:1;flex-wrap:nowrap"></div>
     <button class="btn bp bsm" onclick="newSheet()">+ Hoja</button>
@@ -433,7 +435,7 @@ select.inp{cursor:pointer;}
     <button class="btn bsm" onclick="addSheetCol()">+Col</button>
     <span id="sheet-cell-ref" style="font-family:var(--fm);font-size:.42rem;color:var(--ac3);min-width:36px;flex-shrink:0"></span>
   </div>
-  <div style="flex:1;overflow:auto;position:relative">
+  <div style="flex:1;overflow:auto;position:relative;min-height:0;-webkit-overflow-scrolling:touch">
     <table class="sheet-table" id="sheet-table"></table>
   </div>
 </div>
@@ -1188,25 +1190,13 @@ function exportLogs(){
 
 // ══ 7. NAV ══
 let curView='dashboard';
-function showView(id){
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
-  document.getElementById('view-'+id)?.classList.add('active');
-  document.getElementById('nb-'+id)?.classList.add('on');
-  curView=id;closeMoreMenu();playClick();
-  log('action','Vista: '+id);
-  const renders={dashboard:renderDash,projects:renderProjects,notes:renderNotes,
-    clients:renderClients,links:renderLinks,sheet:renderSheets,kanban:()=>renderKanban(),
-    logs:renderLogs,automations:renderAutomations};
-  renders[id]?.();
-}
 function openModal(id){document.getElementById(id)?.classList.add('open');playClick();}
 function closeModal(id){document.getElementById(id)?.classList.remove('open');}
 function toggleMoreMenu(){const m=document.getElementById('more-menu');m.style.display=m.style.display==='none'?'block':'none';}
 function closeMoreMenu(){const m=document.getElementById('more-menu');if(m)m.style.display='none';}
 
 // ══ 8. DASHBOARD ══
-function renderDash(){updateRings();renderDashStats();renderDashActivity();}
+
 function updateRings(){
   const CIRC=163.4,MAX=20;
   [{id:'dr-pj',num:'dr-pj-num',val:(S.projects||[]).length,max:MAX},
@@ -1858,28 +1848,7 @@ function setArtType(t){
   artType=t;
   ['html','js','css','md'].forEach(x=>{const b=document.getElementById('art-'+x);if(b)b.textContent=x.toUpperCase()+(x===t?' ✓':'');});
 }
-async function generateArtifact(){
-  const prompt=document.getElementById('art-prompt').value.trim();if(!prompt){toast('⚠️','Escribe un prompt');return;}
-  const key=S.config?.apiKey;if(!key){toast('⚠️','Configura una API key');return;}
-  const out=document.getElementById('art-output');out.textContent='Generando con '+curApiProvider+'…';
-  try{
-    let code='';
-    if(curApiProvider==='groq'||curApiProvider==='perplexity'){
-      const prov=API_PROVIDERS[curApiProvider];
-      const endpoint=curApiProvider==='groq'?'https://api.groq.com/openai/v1/chat/completions':'https://api.perplexity.ai/chat/completions';
-      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:curApiModel,max_tokens:2000,messages:[{role:'user',content:`Genera SOLO código ${artType} limpio sin explicaciones ni markdown:\n${prompt}`}]})});
-      const d=await res.json();code=d.choices?.[0]?.message?.content||'';
-    }else if(curApiProvider==='gemini'){
-      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${curGeminiModel}:generateContent?key=${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{role:'user',parts:[{text:`Genera SOLO código ${artType} limpio sin explicaciones ni markdown:\n${prompt}`}]}]})});
-      const d=await res.json();code=d.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    }
-    code=code.replace(/^```[\w]*\n?/gm,'').replace(/```$/gm,'').trim();
-    out.textContent=code;
-    if(artType==='html'){const frame=document.getElementById('art-frame');const prev=document.getElementById('art-preview');if(frame&&prev){frame.srcdoc=code;prev.style.display='block';}}
-    else{document.getElementById('art-preview').style.display='none';}
-    log('action','Artefacto generado: '+artType);
-  }catch(e){out.textContent='❌ Error: '+e.message;log('error','Artifact: '+e.message);}
-}
+async 
 
 // ══ 21. AUTOMATIONS ══
 function renderAutomations(){
@@ -2055,7 +2024,7 @@ function nukeAll(){if(!confirm('⚠️ ¿BORRAR TODOS LOS DATOS? Irreversible.')
 // ══ 24. MULTI-LANG ══
 const LANGS=[{id:'es',flag:'🇪🇸',label:'Español'},{id:'en',flag:'🇬🇧',label:'English'},{id:'zh',flag:'🇨🇳',label:'中文'},{id:'fil',flag:'🇵🇭',label:'Filipino'},{id:'hi',flag:'🇮🇳',label:'हिन्दी'},{id:'ru',flag:'🇷🇺',label:'Русский'},{id:'ms',flag:'🇲🇾',label:'Melayu'},{id:'ar',flag:'🇸🇦',label:'العربية'}];
 let curLang='es';
-function setLang(id){curLang=id;const cfg=S.config;cfg.lang=id;S.config=cfg;document.querySelectorAll('[id^="lang-btn-"]').forEach(b=>b.classList.remove('on'));document.getElementById('lang-btn-'+id)?.classList.add('on');toast('🌐 Idioma',LANGS.find(l=>l.id===id)?.label||id);}
+
 function initLangBtns(){const el=document.getElementById('lang-btns');if(!el)return;el.innerHTML=LANGS.map(l=>`<button id="lang-btn-${l.id}" class="btn bsm ${l.id===curLang?'on':''}" onclick="setLang('${l.id}')">${l.flag} ${l.label}</button>`).join('');}
 
 
@@ -2363,63 +2332,10 @@ function deleteCustomBtn(id){const cfg=S.config;cfg.customBtns=(cfg.customBtns||
 function setRoiPrompt(p){document.getElementById('roi-report-prompt').value=p;}
 
 // ══ NEW: STUDIO FULLSCREEN ══
-function toggleStudioFullscreen(){
-  const ov=document.getElementById('ds-overlay');
-  if(!document.fullscreenElement){ov.requestFullscreen?.()?.catch(()=>{});document.getElementById('ds-fs-btn').textContent='⛶ Salir';}
-  else{document.exitFullscreen?.();document.getElementById('ds-fs-btn').textContent='⛶';}
-}
+
 
 // ══ NEW: EXPORT / IMPORT ALL DATA ══
-function exportAllData(){
-  const data={version:'vico-v1',timestamp:now8601(),projects:S.projects,notes:S.notes,clients:S.clients,links:S.links,kanban:S.kanban,sheets:S.sheets,designs:S.designs,folders:S.folders,automations:S.automations,events:lsGet('dp_events',[]),config:{...S.config,apiKey:undefined,apiKey_groq:undefined,apiKey_gemini:undefined,apiKey_claude:undefined,apiKey_perplexity:undefined}};
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='vico-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('⬇ Exportado','Copia de seguridad descargada');
-}
-function importAllData(inp){
-  const file=inp.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    try{
-      const data=JSON.parse(e.target.result);
-      if(!data.version?.startsWith('vico')){toast('⚠️','Archivo no compatible');return;}
-      if(!confirm('¿Importar datos? Se mezclarán con los actuales.'))return;
-      if(data.projects)S.projects=[...(S.projects||[]),...(data.projects||[]).filter(p=>!(S.projects||[]).find(x=>x.id===p.id))];
-      if(data.notes)S.notes=[...(S.notes||[]),...(data.notes||[]).filter(n=>!(S.notes||[]).find(x=>x.id===n.id))];
-      if(data.clients)S.clients=[...(S.clients||[]),...(data.clients||[]).filter(c=>!(S.clients||[]).find(x=>x.id===c.id))];
-      if(data.links)S.links=[...(S.links||[]),...(data.links||[]).filter(l=>!(S.links||[]).find(x=>x.id===l.id))];
-      if(data.events){const evNow=lsGet('dp_events',[])||[];lsSet('dp_events',[...evNow,...(data.events||[]).filter(ev=>!evNow.find(x=>x.id===ev.id))]);}
-      renderDash();toast('✅ Datos importados','');inp.value='';
-    }catch(err){toast('❌ Error','Archivo inválido');}
-  };
-  reader.readAsText(file);
-}
 
-
-  const prompt=document.getElementById('roi-report-prompt').value.trim();
-  if(!prompt){toast('⚠️','Escribe un prompt');return;}
-  const key=S.config?.apiKey;if(!key){toast('⚠️','Configura una API key');return;}
-  const out=document.getElementById('roi-report-out');
-  out.style.display='block';out.textContent='Generando informe con IA…';
-  const system='Eres un analista financiero experto. Genera informes de ROI claros, estructurados y profesionales. Incluye: resumen ejecutivo, análisis de datos, proyecciones, recomendaciones y conclusiones. Usa formato de texto claro con secciones.';
-  // Get current ROI data
-  const inv=document.getElementById('roi-inv')?.value||0;
-  const ing=document.getElementById('roi-ing')?.value||0;
-  const cos=document.getElementById('roi-cos')?.value||0;
-  const per=document.getElementById('roi-per')?.value||12;
-  const fullPrompt=`${system}\n\nDatos actuales: Inversión=${inv}€ Ingresos=${ing}€ Costes=${cos}€ Periodo=${per}m\n\n${prompt}`;
-  try{
-    let reply='';
-    if(curApiProvider==='gemini'){
-      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${curGeminiModel}:generateContent?key=${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{role:'user',parts:[{text:fullPrompt}]}]})});
-      const d=await res.json();reply=d.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';
-    }else{
-      const endpoint=curApiProvider==='groq'?'https://api.groq.com/openai/v1/chat/completions':'https://api.perplexity.ai/chat/completions';
-      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:curApiModel,max_tokens:2000,messages:[{role:'user',content:fullPrompt}]})});
-      const d=await res.json();reply=d.choices?.[0]?.message?.content||'Sin respuesta';
-    }
-    out.textContent=reply;
-    toast('✅ Informe generado','');
-  }catch(e){out.textContent='❌ Error: '+e.message;}
-}
 
 // ══ NEW: STUDIO FULLSCREEN ══
 function toggleStudioFullscreen(){
@@ -2571,9 +2487,8 @@ async function loadMarketNews(){
     }else if(nEl){nEl.innerHTML=`<div style="font-size:.7rem;color:var(--tx3);padding:10px;text-align:center">No se cargaron noticias. <a href="https://finance.yahoo.com/" target="_blank" style="color:var(--cy)">Yahoo Finance →</a></div>`;}
   }catch(e){if(nEl)nEl.innerHTML=`<div style="font-size:.7rem;color:var(--tx3);padding:10px;text-align:center">Error de red. <a href="https://finance.yahoo.com/" target="_blank" style="color:var(--cy)">Yahoo Finance →</a></div>`;}
 }
-function sendNewsToROI(title){document.getElementById('roi-report-prompt').value='Analiza el impacto en ROI e inversión de esta noticia: '+title;openModal('m-roi-report');}
 
-// ══ NEW: ROI REPORT v3 (clean format, copy, print, download PNG) ══
+
 async function generateROIReport(){
   const prompt=document.getElementById('roi-report-prompt').value.trim();
   if(!prompt){toast('⚠️','Escribe un prompt');return;}
@@ -2636,25 +2551,6 @@ async function downloadRoiPNG(){
   // Use a print window approach as fallback
   printRoiReport();
 }
-  const prompt=document.getElementById('roi-report-prompt').value.trim();
-  if(!prompt){toast('⚠️','Escribe un prompt');return;}
-  const key=S.config?.apiKey;if(!key){toast('⚠️','Configura una API key');return;}
-  const out=document.getElementById('roi-report-out');
-  const actions=document.getElementById('roi-report-actions');
-  out.style.display='block';out.innerHTML='<div class="spinner"></div>';
-  if(actions)actions.style.display='none';
-  const inv=document.getElementById('roi-inv')?.value||0;const ing=document.getElementById('roi-ing')?.value||0;const cos=document.getElementById('roi-cos')?.value||0;const per=document.getElementById('roi-per')?.value||12;
-  const system=`Eres analista financiero experto. Genera informe ROI ESTRUCTURADO sin asteriscos, sin almohadillas, sin markdown. Usa MAYÚSCULAS para títulos de sección. Estructura: 1. RESUMEN EJECUTIVO  2. DATOS DEL ANÁLISIS  3. MÉTRICAS CALCULADAS  4. ANÁLISIS DE RESULTADOS  5. PROYECCIONES  6. RECOMENDACIONES  7. CONCLUSIONES. Datos: Inversión=${inv}€ Ingresos=${ing}€ Costes=${cos}€ Periodo=${per} meses.`;
-  try{
-    let reply='';
-    if(curApiProvider==='gemini'){const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${curGeminiModel}:generateContent?key=${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{role:'user',parts:[{text:system+'\n\n'+prompt}]}]})});const d=await res.json();reply=d.candidates?.[0]?.content?.parts?.[0]?.text||'Sin respuesta';}
-    else{const endpoint=curApiProvider==='groq'?'https://api.groq.com/openai/v1/chat/completions':'https://api.perplexity.ai/chat/completions';const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:curApiModel,max_tokens:2500,messages:[{role:'system',content:system},{role:'user',content:prompt}]})});const d=await res.json();reply=d.choices?.[0]?.message?.content||'Sin respuesta';}
-    reply=reply.replace(/\*\*/g,'').replace(/\*/g,'').replace(/#{1,6}\s*/g,'').replace(/_{2}/g,'').trim();
-    const formatted=reply.split('\n').map(line=>{const t=line.trim();if(!t)return'<br>';if(/^\d+\.\s+[A-ZÁÉÍÓÚÑ\s]{5,}$/.test(t)||/^[A-ZÁÉÍÓÚÑ\s]{8,}$/.test(t))return`<div style="font-family:var(--fn);font-weight:800;color:var(--ac3);font-size:.82rem;margin:12px 0 4px;border-bottom:1px solid var(--bo);padding-bottom:3px">${t}</div>`;if(t.startsWith('-')||t.startsWith('•'))return`<div style="padding-left:12px">• ${t.slice(1).trim()}</div>`;return`<div style="margin:2px 0">${t}</div>`;}).join('');
-    out.innerHTML=formatted;if(actions)actions.style.display='flex';
-    window._lastROIReport=reply;toast('✅ Informe generado','');
-  }catch(e){out.textContent='❌ Error: '+e.message;}
-}
 function copyROIReport(){const text=window._lastROIReport||'';navigator.clipboard?.writeText(text).then(()=>toast('📋 Copiado','')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('📋 Copiado','');});}
 function printROIReport(){const out=document.getElementById('roi-report-out');if(!out)return;const w=window.open('','_blank');w.document.write(`<html><head><title>Informe ROI - VICO PROYECTS</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:30px auto;line-height:1.6;color:#222}.sec{font-weight:800;color:#6d28d9;margin:16px 0 4px;border-bottom:1px solid #ddd;padding-bottom:2px}@media print{body{margin:10px}}</style></head><body><h1>📈 Informe ROI — VICO PROYECTS</h1><p style="color:#888;font-size:.8em">Generado: ${new Date().toLocaleString()}</p>${out.innerHTML}</body></html>`);w.document.close();w.print();}
 function downloadROIReport(){printROIReport();}
@@ -2667,18 +2563,8 @@ const RSS_DEFAULTS=[
   {id:'verge',    name:'The Verge',         url:'https://www.theverge.com/rss/index.xml',active:true},
   {id:'tc',       name:'TechCrunch',        url:'https://techcrunch.com/feed/',active:true},
 ];
-function getRSSFeeds(){
-  const saved=lsGet('vico_rss',null);
-  if(!saved){lsSet('vico_rss',RSS_DEFAULTS);return RSS_DEFAULTS;}
-  return saved;
-}
-function toggleRSS(v){
-  const cfg=S.config;cfg.rssEnabled=v;S.config=cfg;
-  const sec=document.getElementById('dash-rss-section');
-  if(sec)sec.style.display=v?'block':'none';
-  if(v&&!window._rssLoaded)loadDashRSS(false);
-  toast(v?'📰 RSS activado':'📰 RSS desactivado','');
-}
+
+
 function renderRSSFeedsList(){
   const el=document.getElementById('rss-feeds-list');if(!el)return;
   const feeds=getRSSFeeds();
@@ -2692,17 +2578,9 @@ function renderRSSFeedsList(){
       <button onclick="deleteRSSFeed('${f.id}')" style="background:none;border:none;color:var(--tx3);cursor:pointer;padding:2px 5px">✕</button>
     </div>`).join('');
 }
-function toggleRSSFeed(id,v){const feeds=getRSSFeeds();const f=feeds.find(x=>x.id===id);if(f){f.active=v;lsSet('vico_rss',feeds);}}
+
 function deleteRSSFeed(id){const feeds=getRSSFeeds().filter(f=>f.id!==id);lsSet('vico_rss',feeds);renderRSSFeedsList();}
-function addRSSFeed(){
-  const url=document.getElementById('rss-new-url').value.trim();
-  const name=document.getElementById('rss-new-name').value.trim()||url;
-  if(!url){toast('⚠️','URL requerida');return;}
-  const feeds=getRSSFeeds();feeds.push({id:uid(),name,url,active:true});
-  lsSet('vico_rss',feeds);
-  document.getElementById('rss-new-url').value='';document.getElementById('rss-new-name').value='';
-  renderRSSFeedsList();toast('✅ Feed añadido',name);
-}
+
 window._rssLoaded=false;window._rssItems=[];
 async function loadDashRSS(force=false){
   const sec=document.getElementById('dash-rss-section');if(!sec)return;
@@ -2771,44 +2649,12 @@ function saveNewsAsLink(url,title){saveNewsLink(url,title);}
 function sendNewsToROI(title){sendToROI(title);}
 
 // ══ I18N COMPLETO ══
-const I18N={
-  es:{dashboard:'Dashboard',notes:'Notas',projects:'Proyectos',clients:'Clientes',links:'Links',settings:'Configuración',kanban:'Kanban',roi:'ROI',events:'Eventos',lab:'Lab',save:'Guardar',cancel:'Cancelar',delete:'Eliminar',add:'Añadir',generate:'Generar',more:'Más',loading:'Cargando…',noData:'Sin datos',search:'Buscar',preview:'Vista Previa',copy:'Copiar',print:'Imprimir',export:'Exportar',import:'Importar'},
-  en:{dashboard:'Dashboard',notes:'Notes',projects:'Projects',clients:'Clients',links:'Links',settings:'Settings',kanban:'Kanban',roi:'ROI',events:'Events',lab:'Lab',save:'Save',cancel:'Cancel',delete:'Delete',add:'Add',generate:'Generate',more:'More',loading:'Loading…',noData:'No data',search:'Search',preview:'Preview',copy:'Copy',print:'Print',export:'Export',import:'Import'},
-  zh:{dashboard:'仪表板',notes:'笔记',projects:'项目',clients:'客户',links:'链接',settings:'设置',kanban:'看板',roi:'投资回报',events:'事件',lab:'实验室',save:'保存',cancel:'取消',delete:'删除',add:'添加',generate:'生成',more:'更多',loading:'加载中…',noData:'暂无数据',search:'搜索',preview:'预览',copy:'复制',print:'打印',export:'导出',import:'导入'},
-  fil:{dashboard:'Dashboard',notes:'Mga Tala',projects:'Proyekto',clients:'Kliyente',links:'Mga Link',settings:'Setting',kanban:'Kanban',roi:'ROI',events:'Kaganapan',lab:'Lab',save:'I-save',cancel:'Kanselahin',delete:'Burahin',add:'Idagdag',generate:'Gumawa',more:'Higit Pa',loading:'Naglo-load…',noData:'Walang datos',search:'Maghanap',preview:'Preview',copy:'Kopyahin',print:'I-print',export:'I-export',import:'I-import'},
-  hi:{dashboard:'डैशबोर्ड',notes:'नोट्स',projects:'प्रोजेक्ट',clients:'क्लाइंट',links:'लिंक',settings:'सेटिंग्स',kanban:'कानबान',roi:'ROI',events:'इवेंट',lab:'लैब',save:'सहेजें',cancel:'रद्द करें',delete:'मिटाएं',add:'जोड़ें',generate:'बनाएं',more:'और',loading:'लोड हो रहा…',noData:'कोई डेटा नहीं',search:'खोजें',preview:'पूर्वावलोकन',copy:'कॉपी',print:'प्रिंट',export:'एक्सपोर्ट',import:'इम्पोर्ट'},
-  ru:{dashboard:'Панель',notes:'Заметки',projects:'Проекты',clients:'Клиенты',links:'Ссылки',settings:'Настройки',kanban:'Канбан',roi:'ROI',events:'События',lab:'Лаборатория',save:'Сохранить',cancel:'Отмена',delete:'Удалить',add:'Добавить',generate:'Создать',more:'Ещё',loading:'Загрузка…',noData:'Нет данных',search:'Поиск',preview:'Предпросмотр',copy:'Копировать',print:'Печать',export:'Экспорт',import:'Импорт'},
-  ms:{dashboard:'Papan Pemuka',notes:'Nota',projects:'Projek',clients:'Pelanggan',links:'Pautan',settings:'Tetapan',kanban:'Kanban',roi:'ROI',events:'Acara',lab:'Lab',save:'Simpan',cancel:'Batal',delete:'Padam',add:'Tambah',generate:'Jana',more:'Lagi',loading:'Memuatkan…',noData:'Tiada data',search:'Cari',preview:'Pratonton',copy:'Salin',print:'Cetak',export:'Eksport',import:'Import'},
-  ar:{dashboard:'لوحة التحكم',notes:'الملاحظات',projects:'المشاريع',clients:'العملاء',links:'الروابط',settings:'الإعدادات',kanban:'كانبان',roi:'ROI',events:'الأحداث',lab:'المختبر',save:'حفظ',cancel:'إلغاء',delete:'حذف',add:'إضافة',generate:'إنشاء',more:'المزيد',loading:'جارٍ التحميل…',noData:'لا توجد بيانات',search:'بحث',preview:'معاينة',copy:'نسخ',print:'طباعة',export:'تصدير',import:'استيراد'},
-};
-function setLang(id){
-  curLang=id;const cfg=S.config;cfg.lang=id;S.config=cfg;
-  document.querySelectorAll('[id^="lang-btn-"]').forEach(b=>b.classList.remove('on'));
-  document.getElementById('lang-btn-'+id)?.classList.add('on');
-  applyI18N(id);
-  toast('🌐 Idioma',LANGS.find(l=>l.id===id)?.label||id);
-}
-function applyI18N(lang){
-  const tr=I18N[lang]||I18N.es;
-  const navMap={dashboard:'dashboard',projects:'projects',notes:'notes',clients:'clients'};
-  Object.entries(navMap).forEach(([key,nb])=>{
-    const btn=document.getElementById('nb-'+nb);
-    if(btn){const sp=btn.querySelector('span');if(sp)sp.textContent=tr[key]||sp.textContent;}
-  });
-  const nbMore=document.getElementById('nb-more');if(nbMore){const sp=nbMore.querySelector('span');if(sp)sp.textContent=tr.more||'Más';}
-  document.documentElement.lang=lang;
-  document.body.style.direction=lang==='ar'?'rtl':'ltr';
-}
 
-  {id:'wired',name:'Wired',url:'https://www.wired.com/feed/rss',active:true},
-  {id:'elmundo',name:'El Mundo',url:'https://www.elmundo.es/rss/tecnologia.xml',active:true},
-  {id:'mittech',name:'MIT Tech',url:'https://www.technologyreview.com/feed/',active:true},
-  {id:'theverge',name:'The Verge',url:'https://www.theverge.com/rss/index.xml',active:true},
-  {id:'techcrunch',name:'TechCrunch',url:'https://techcrunch.com/feed/',active:true},
-];
-function getRSSFeeds(){const cfg=S.config;if(!cfg.rssFeeds||!cfg.rssFeeds.length){cfg.rssFeeds=[...DEFAULT_RSS_FEEDS];S.config=cfg;}return cfg.rssFeeds;}
+
+
+function getRSSFeeds(){const cfg=S.config;if(!cfg.rssFeeds||!cfg.rssFeeds.length){cfg.rssFeeds=[...RSS_DEFAULTS];S.config=cfg;}return cfg.rssFeeds;}
 function toggleRSS(v){const cfg=S.config;cfg.rssEnabled=v;S.config=cfg;const sec=document.getElementById('dash-rss-section');if(sec)sec.style.display=v?'block':'none';if(v)loadRSSFeeds();toast(v?'📰 RSS activado':'📰 RSS desactivado','');}
-function addRSSFeed(){const url=document.getElementById('rss-new-url')?.value.trim();const name=document.getElementById('rss-new-name')?.value.trim()||'Feed';if(!url){toast('⚠️','URL requerida');return;}const cfg=S.config;if(!cfg.rssFeeds)cfg.rssFeeds=[...DEFAULT_RSS_FEEDS];cfg.rssFeeds.push({id:uid(),name,url,active:true});S.config=cfg;document.getElementById('rss-new-url').value='';document.getElementById('rss-new-name').value='';renderRSSSettings();toast('✅ Feed añadido',name);}
+function addRSSFeed(){const url=document.getElementById('rss-new-url')?.value.trim();const name=document.getElementById('rss-new-name')?.value.trim()||'Feed';if(!url){toast('⚠️','URL requerida');return;}const cfg=S.config;if(!cfg.rssFeeds)cfg.rssFeeds=[...RSS_DEFAULTS];cfg.rssFeeds.push({id:uid(),name,url,active:true});S.config=cfg;document.getElementById('rss-new-url').value='';document.getElementById('rss-new-name').value='';renderRSSSettings();toast('✅ Feed añadido',name);}
 function renderRSSSettings(){const el=document.getElementById('rss-feeds-list');if(!el)return;const feeds=getRSSFeeds();el.innerHTML=feeds.map(f=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bo)"><label class="tgl" style="transform:scale(.8)"><input type="checkbox" ${f.active?'checked':''} onchange="toggleRSSFeed('${f.id}',this.checked)"><span class="tgl-sl"></span></label><span style="font-size:.72rem;flex:1;font-weight:600">${esc(f.name)}</span><span style="font-family:var(--fm);font-size:.34rem;color:var(--tx3);flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(f.url)}</span><button class="btn br bsm" style="font-size:.5rem" onclick="removeRSSFeed('${f.id}')">✕</button></div>`).join('');}
 function toggleRSSFeed(id,v){const cfg=S.config;const f=cfg.rssFeeds?.find(x=>x.id===id);if(f){f.active=v;S.config=cfg;}}
 function removeRSSFeed(id){const cfg=S.config;cfg.rssFeeds=(cfg.rssFeeds||[]).filter(f=>f.id!==id);S.config=cfg;renderRSSSettings();}
